@@ -1,0 +1,54 @@
+name = "claude"
+description = "Claude Code CLI by Anthropic"
+install_cmd = "curl -fsSL https://claude.ai/install.sh | bash && source ~/.bashrc"
+run_cmd = "claude"
+version_cmd = "claude --version"
+skip_permissions_flag = "--dangerously-skip-permissions"
+config_path = "/home/ccc/.claude"
+
+[firewall]
+domains = [
+  # Claude API & Auth
+  "api.anthropic.com",
+  "console.anthropic.com",
+  "claude.ai",
+  "code.claude.com",
+  "statsigapi.net",
+  "sentry.io",
+  # GitHub Copilot API (for copilot mode)
+  "api.githubcopilot.com",
+  # Package registries
+  "registry.npmjs.org",
+  "registry.npmmirror.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  # Go packages
+  "proxy.golang.org",
+  "sum.golang.org",
+  # Rust packages
+  "crates.io",
+  "static.crates.io",
+  # Git hosting
+  "github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "codeload.github.com",
+  "gitlab.com",
+  "bitbucket.org",
+  # Telegram (for takopi)
+  "api.telegram.org",
+  # Context7 MCP
+  "api.context7.com",
+  "context7.com",
+]
+
+[auth]
+method = "oauth"
+instructions = "Run 'claude' and follow the OAuth flow to authenticate with your Claude Pro/Max account or Anthropic Console."
+
+[dockerfile]
+snippet = """
+# Install Claude Code via native installer
+RUN curl -fsSL https://claude.ai/install.sh | bash
+"""

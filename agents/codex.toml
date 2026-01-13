@@ -1,0 +1,49 @@
+name = "codex"
+description = "Codex CLI by OpenAI"
+install_cmd = "npm install -g @openai/codex"
+run_cmd = "codex"
+version_cmd = "codex --version"
+skip_permissions_flag = "--full-auto"
+config_path = "/home/ccc/.codex"
+
+[firewall]
+domains = [
+  # OpenAI API & Auth
+  "api.openai.com",
+  "auth.openai.com",
+  "auth0.openai.com",
+  "platform.openai.com",
+  "cdn.openai.com",
+  "chatgpt.com",
+  # GitHub Copilot API (for copilot mode)
+  "api.githubcopilot.com",
+  # Package registries
+  "registry.npmjs.org",
+  "registry.npmmirror.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  # Go packages
+  "proxy.golang.org",
+  "sum.golang.org",
+  # Rust packages
+  "crates.io",
+  "static.crates.io",
+  # Git hosting
+  "github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "codeload.github.com",
+  "gitlab.com",
+  "bitbucket.org",
+]
+
+[auth]
+method = "oauth"
+instructions = "Run 'codex' and sign in with ChatGPT (requires Plus, Pro, Business, Edu, or Enterprise plan) or use an OpenAI API key."
+
+[dockerfile]
+snippet = """
+# Install OpenAI Codex CLI
+RUN npm install -g @openai/codex
+"""

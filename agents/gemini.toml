@@ -1,0 +1,54 @@
+name = "gemini"
+description = "Gemini CLI by Google"
+install_cmd = "npm install -g @google/gemini-cli"
+run_cmd = "gemini"
+version_cmd = "gemini --version"
+config_path = "/home/ccc/.gemini"
+
+[firewall]
+domains = [
+  # Google Gemini API & Auth
+  "generativelanguage.googleapis.com",
+  "aistudio.google.com",
+  "accounts.google.com",
+  "oauth2.googleapis.com",
+  "www.googleapis.com",
+  "storage.googleapis.com",
+  # Vertex AI (optional)
+  "aiplatform.googleapis.com",
+  "us-central1-aiplatform.googleapis.com",
+  # Google Search grounding
+  "www.google.com",
+  "customsearch.googleapis.com",
+  # GitHub Copilot API (for copilot mode)
+  "api.githubcopilot.com",
+  # Package registries
+  "registry.npmjs.org",
+  "registry.npmmirror.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  # Go packages
+  "proxy.golang.org",
+  "sum.golang.org",
+  # Rust packages
+  "crates.io",
+  "static.crates.io",
+  # Git hosting
+  "github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "codeload.github.com",
+  "gitlab.com",
+  "bitbucket.org",
+]
+
+[auth]
+method = "oauth"
+instructions = "Run 'gemini' and follow the Google OAuth flow (free tier: 60 req/min, 1000 req/day), or set GEMINI_API_KEY from https://aistudio.google.com/apikey"
+
+[dockerfile]
+snippet = """
+# Install Google Gemini CLI (requires Node.js 20+)
+RUN npm install -g @google/gemini-cli
+"""

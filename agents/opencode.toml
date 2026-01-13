@@ -1,0 +1,66 @@
+name = "opencode"
+description = "OpenCode - Open source AI coding agent (Go-based TUI)"
+install_cmd = "curl -fsSL https://opencode.ai/install | bash"
+run_cmd = "opencode"
+version_cmd = "opencode -v"
+config_path = "/home/ccc/.config/opencode"
+
+[firewall]
+domains = [
+  # OpenCode updates & auth
+  "opencode.ai",
+  "api.opencode.ai",
+  # Anthropic (Claude provider)
+  "api.anthropic.com",
+  # OpenAI provider
+  "api.openai.com",
+  # Google provider
+  "generativelanguage.googleapis.com",
+  # GitHub Copilot API
+  "api.githubcopilot.com",
+  # OpenRouter
+  "openrouter.ai",
+  # Groq
+  "api.groq.com",
+  # Together AI
+  "api.together.xyz",
+  # DeepSeek
+  "api.deepseek.com",
+  # Fireworks AI
+  "api.fireworks.ai",
+  # Cerebras
+  "api.cerebras.ai",
+  # XAI (Grok)
+  "api.x.ai",
+  # Ollama (local)
+  "localhost",
+  # Package registries
+  "registry.npmjs.org",
+  "registry.npmmirror.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  # Go packages
+  "proxy.golang.org",
+  "sum.golang.org",
+  # Rust packages
+  "crates.io",
+  "static.crates.io",
+  # Git hosting
+  "github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "codeload.github.com",
+  "gitlab.com",
+  "bitbucket.org",
+]
+
+[auth]
+method = "api_key"
+instructions = "Run 'opencode' and configure your preferred AI provider via settings. Supports Anthropic, OpenAI, Google, OpenRouter, Groq, and more."
+
+[dockerfile]
+snippet = """
+# Install OpenCode CLI (Go binary)
+RUN curl -fsSL https://opencode.ai/install | bash
+"""

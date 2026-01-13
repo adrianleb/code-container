@@ -1,0 +1,34 @@
+{
+  "name": "ccc",
+  "version": "0.1.0",
+  "description": "Coding Container CLI - Setup coding agents in Docker with firewall support",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "ccc": "./dist/ccc"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile dist/ccc",
+    "install-local": "bun run build && mkdir -p ~/.local/bin && cp dist/ccc ~/.local/bin/ccc",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "lint": "oxlint src",
+    "lint:fix": "oxlint src --fix",
+    "typecheck": "tsgo --noEmit",
+    "check": "bun run lint && bun run typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260113.1",
+    "oxc-parser": "^0.108.0",
+    "oxlint": "^1.39.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "commander": "^14.0.2"
+  }
+}
