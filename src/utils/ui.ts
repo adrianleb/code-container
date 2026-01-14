@@ -69,10 +69,13 @@ export const style = {
   info: (text: string) => `${colors.cyan}${text}${colors.reset}`,
   dim: (text: string) => `${colors.dim}${text}${colors.reset}`,
   bold: (text: string) => `${colors.bold}${text}${colors.reset}`,
-  highlight: (text: string) => `${colors.bold}${colors.cyan}${text}${colors.reset}`,
-  command: (text: string) => `${colors.bold}${colors.yellow}${text}${colors.reset}`,
+  highlight: (text: string) =>
+    `${colors.bold}${colors.cyan}${text}${colors.reset}`,
+  command: (text: string) =>
+    `${colors.bold}${colors.yellow}${text}${colors.reset}`,
   path: (text: string) => `${colors.blue}${text}${colors.reset}`,
-  code: (text: string) => `${colors.bgBlack}${colors.white} ${text} ${colors.reset}`,
+  code: (text: string) =>
+    `${colors.bgBlack}${colors.white} ${text} ${colors.reset}`,
 
   ok: () => `${colors.green}${symbols.check}${colors.reset}`,
   fail: () => `${colors.red}${symbols.cross}${colors.reset}`,
@@ -88,10 +91,10 @@ ${colors.cyan}${colors.bold}
   ██║     ██║     ██║
   ╚██████╗╚██████╗╚██████╗
    ╚═════╝ ╚═════╝ ╚═════╝
-${colors.reset}${colors.dim}  Coding Container CLI${colors.reset}
+${colors.reset}${colors.dim}  Code Container CLI${colors.reset}
 `;
 
-export const bannerSmall = `${colors.cyan}${colors.bold}CCC${colors.reset} ${colors.dim}Coding Container CLI${colors.reset}`;
+export const bannerSmall = `${colors.cyan}${colors.bold}CCC${colors.reset} ${colors.dim}Code Container CLI${colors.reset}`;
 
 export function step(current: number, total: number, message: string): string {
   const progress = `${colors.dim}[${current}/${total}]${colors.reset}`;
@@ -105,7 +108,7 @@ export function box(title: string, content: string[]): string {
   const separator = `${colors.dim}├${"─".repeat(width)}┤${colors.reset}`;
   const contentLines = content.map(
     (line) =>
-      `${colors.dim}│${colors.reset} ${line}${" ".repeat(width - line.length - 2)} ${colors.dim}│${colors.reset}`
+      `${colors.dim}│${colors.reset} ${line}${" ".repeat(width - line.length - 2)} ${colors.dim}│${colors.reset}`,
   );
   const bottom = `${colors.dim}╰${"─".repeat(width)}╯${colors.reset}`;
 
@@ -123,7 +126,9 @@ export function createSpinner(message: string) {
       process.stdout.write("\x1b[?25l"); // Hide cursor
       intervalId = setInterval(() => {
         const frame = spinnerFrames[frameIndex];
-        process.stdout.write(`\r${colors.cyan}${frame}${colors.reset} ${message}`);
+        process.stdout.write(
+          `\r${colors.cyan}${frame}${colors.reset} ${message}`,
+        );
         frameIndex = (frameIndex + 1) % spinnerFrames.length;
       }, 80);
     },
@@ -148,10 +153,15 @@ export function createSpinner(message: string) {
 }
 
 export function header(text: string): void {
-  console.log(`\n${colors.bold}${colors.cyan}${symbols.arrowRight}${colors.reset} ${colors.bold}${text}${colors.reset}`);
+  console.log(
+    `\n${colors.bold}${colors.cyan}${symbols.arrowRight}${colors.reset} ${colors.bold}${text}${colors.reset}`,
+  );
 }
 
-export function item(text: string, status?: "ok" | "fail" | "warn" | "pending"): void {
+export function item(
+  text: string,
+  status?: "ok" | "fail" | "warn" | "pending",
+): void {
   let prefix = "  ";
   switch (status) {
     case "ok":
@@ -175,7 +185,9 @@ export function hint(text: string): void {
 }
 
 export function error(text: string): void {
-  console.error(`\n${colors.red}${symbols.cross} Error:${colors.reset} ${text}`);
+  console.error(
+    `\n${colors.red}${symbols.cross} Error:${colors.reset} ${text}`,
+  );
 }
 
 export function success(text: string): void {
@@ -187,7 +199,9 @@ export function warning(text: string): void {
 }
 
 export function showCommand(cmd: string): void {
-  console.log(`\n  ${colors.dim}$${colors.reset} ${colors.bold}${cmd}${colors.reset}`);
+  console.log(
+    `\n  ${colors.dim}$${colors.reset} ${colors.bold}${cmd}${colors.reset}`,
+  );
 }
 
 export function keyValue(key: string, value: string): void {

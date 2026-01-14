@@ -1,5 +1,5 @@
 #!/bin/sh
-# CCC - Coding Container CLI installer
+# CCC - Code Container CLI installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/your-repo/ccc/main/install.sh | sh
 
 set -e
@@ -104,7 +104,7 @@ setup_path() {
 }
 
 main() {
-    printf "\n${BLUE}Installing CCC - Coding Container CLI${RESET}\n\n"
+    printf "\n${BLUE}Installing CCC - Code Container CLI${RESET}\n\n"
 
     detect_platform
     check_requirements

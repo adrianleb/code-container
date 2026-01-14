@@ -26,7 +26,7 @@ case "\${1:-}" in
     ;;
   --help|-h)
     cat << 'EOF'
-ccc-server - Server-side wrapper for coding container
+ccc-server - Server-side wrapper for code container
 
 Usage:
   ccc-server              Attach to main session

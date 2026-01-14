@@ -41,6 +41,7 @@ import {
   killSession,
   showLogs,
   restartContainer,
+  type InitOptions,
 } from "./deploy/local.ts";
 import {
   initRemote,
@@ -134,6 +135,7 @@ export function createCLI(): Command {
     .option("--agents <names>", "Agent(s) to use (comma-separated, e.g., claude,codex)")
     .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
     .option("--no-build", "Skip building the container")
+    .option("--no-cache", "Build without Docker cache")
     .action(async (target, options) => {
       const host = resolveTarget(target);
 
@@ -322,7 +324,7 @@ export function createCLI(): Command {
 
       if (options.build) {
         console.log(`\n  ${ui.symbols.package} Building container... ${ui.style.dim("(this may take a few minutes)")}`);
-        await buildContainer(options.output);
+        await buildContainer(options.output, { noCache: options.noCache });
       } else {
         console.log(`\n  ${ui.style.dim("Files created. To build the container:")}`);
         ui.showCommand(`cd ${options.output} && docker compose build`);
@@ -702,9 +704,10 @@ export function createCLI(): Command {
 
   agentCmd
     .command("add <name>")
-    .description("Add and install an agent")
+    .description("Add an agent (enables config, rebuilds container, runs auth)")
     .argument("[target]", "Remote target (@alias) or local")
-    .option("--no-install", "Only enable config, skip container installation")
+    .option("--no-build", "Only enable config, skip rebuild (for adding multiple agents)")
+    .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
     .action(async (name, target, options) => {
       const host = resolveTarget(target);
       const templates = listAvailableAgents();
@@ -716,56 +719,16 @@ export function createCLI(): Command {
         process.exit(1);
       }
 
-      // Check if already enabled
+      console.log(`\n${ui.symbols.sparkles} ${ui.style.bold("Adding agent:")} ${ui.style.highlight(name)}\n`);
+
+      // Step 1: Enable the agent config
+      ui.header("Step 1: Enable agent config");
       if (isAgentEnabled(name)) {
-        ui.warning(`Agent '${name}' is already enabled`);
+        ui.item(`${name} already enabled`, "ok");
       } else {
-        // Enable the agent (write TOML)
         const enabled = enableAgents([name]);
         if (enabled.length > 0) {
-          ui.item(`Enabled ${name} config`, "ok");
-        }
-      }
-
-      // Hot-install in container if running and --install is true
-      if (options.install) {
-        const agents = getAgents();
-        const agent = agents[name];
-
-        if (!agent) {
-          ui.error("Failed to load agent config");
-          process.exit(1);
-        }
-
-        // Check if container is running
-        let containerRunning = false;
-        try {
-          if (host) {
-            containerRunning = checkRemoteContainerRunning(host);
-          } else {
-            const { execSync } = await import("child_process");
-            const result = execSync(
-              `docker inspect -f '{{.State.Running}}' ${DEFAULT_CONTAINER_NAME} 2>/dev/null`,
-              { encoding: "utf-8", stdio: "pipe" }
-            );
-            containerRunning = result.trim() === "true";
-          }
-        } catch {
-          containerRunning = false;
-        }
-
-        if (containerRunning) {
-          console.log(
-            `\n${ui.symbols.package} ${ui.style.bold("Installing")} ${ui.style.highlight(name)} ${ui.style.dim("in container...")}`
-          );
-          const success = installAgentInContainer(agent, { host });
-          if (success) {
-            ui.item(`${name} installed`, "ok");
-          } else {
-            ui.item(`Failed to install ${name}`, "fail");
-          }
-        } else {
-          ui.hint("Container not running. Agent will be installed on next build.");
+          ui.item(`Enabled ${name}`, "ok");
         }
       }
 
@@ -775,8 +738,79 @@ export function createCLI(): Command {
         ui.item(`Set ${name} as default agent`, "ok");
       }
 
-      ui.success(`Agent '${name}' added!`);
-      ui.hint(`Authenticate: ${ui.style.command(`ccc agent auth ${name}`)}`);
+      // Step 2: Regenerate files and rebuild container
+      if (options.build) {
+        ui.header("Step 2: Regenerate and rebuild container");
+
+        // Regenerate Docker files with all enabled agents
+        const allAgents = Object.values(getAgents());
+        if (allAgents.length === 0) {
+          ui.error("No agents enabled");
+          process.exit(1);
+        }
+
+        try {
+          if (host) {
+            // For remote, we need to regenerate locally then sync
+            // For now, just rebuild which will use existing files
+            // TODO: implement remote file regeneration
+            ui.warning("Remote agent add requires manual file sync. Running rebuild...");
+            await buildRemote(host);
+          } else {
+            if (!existsSync(join(options.output, "Dockerfile"))) {
+              ui.error("No Dockerfile found. Run 'ccc init' first.");
+              process.exit(1);
+            }
+
+            // Regenerate files with all agents
+            console.log(`  ${ui.style.dim("Regenerating Docker files with all agents...")}`);
+            generateFiles({
+              agents: allAgents,
+              outputDir: options.output,
+            });
+
+            // Build container
+            console.log(`\n  ${ui.style.dim("Building container...")}\n`);
+            await buildContainer(options.output);
+          }
+          ui.item("Container rebuilt", "ok");
+
+          // Restart container after rebuild (force recreate to use new image)
+          console.log(`\n  ${ui.style.dim("Restarting container...")}`);
+          if (host) {
+            await startRemote(host);
+          } else {
+            await startContainer(options.output, true); // force recreate
+          }
+          ui.item("Container started", "ok");
+        } catch (err) {
+          ui.error("Build failed");
+          process.exit(1);
+        }
+
+        // Step 3: Run auth
+        ui.header("Step 3: Authenticate");
+        const agents = getAgents();
+        const agent = agents[name];
+        const config = getAgentConfig(name);
+
+        if (agent && config) {
+          console.log(`  ${ui.style.dim(config.auth?.instructions || agent.getAuthInstructions())}\n`);
+          runAgentAuth(agent, config, { host });
+
+          // Verify
+          const authStatus = checkAuthStatus(agent, config, { host });
+          if (authStatus.authenticated) {
+            ui.success(`${name} is ready!`);
+          } else {
+            ui.hint("If auth didn't complete, run: " + ui.style.command(`ccc agent auth ${name}`));
+          }
+        }
+      } else {
+        ui.success(`Agent '${name}' config enabled!`);
+        ui.hint(`Run ${ui.style.command("ccc agent add <more-agents> --no-build")} to add more`);
+        ui.hint(`Then ${ui.style.command("ccc build && ccc agent auth " + name)} to install and authenticate`);
+      }
     });
 
   agentCmd

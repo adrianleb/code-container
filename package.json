@@ -1,7 +1,7 @@
 {
   "name": "ccc",
   "version": "0.1.0",
-  "description": "Coding Container CLI - Setup coding agents in Docker with firewall support",
+  "description": "Code Container CLI - Setup coding agents in Docker with firewall support",
   "module": "src/index.ts",
   "type": "module",
   "bin": {

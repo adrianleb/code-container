@@ -1,8 +1,8 @@
 name = "opencode"
 description = "OpenCode - Open source AI coding agent (Go-based TUI)"
 install_cmd = "curl -fsSL https://opencode.ai/install | bash"
-run_cmd = "opencode"
-version_cmd = "opencode -v"
+run_cmd = "/home/ccc/.opencode/bin/opencode"
+version_cmd = "/home/ccc/.opencode/bin/opencode -v"
 config_path = "/home/ccc/.config/opencode"
 
 [firewall]
@@ -63,5 +63,6 @@ auth_check_files = ["config.toml", "config.json"]
 [dockerfile]
 snippet = """
 # Install OpenCode CLI (Go binary)
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN curl -fsSL https://opencode.ai/install | bash && \
+    echo 'export PATH="/home/ccc/.opencode/bin:$PATH"' >> ~/.zshrc
 """

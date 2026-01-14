@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     ripgrep curl ca-certificates wget \\
     python3 python3-pip python3-venv \\
     build-essential pkg-config libssl-dev \\
+    npm \\
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Rename bun user to ccc (bun image already has user with UID 1000)
@@ -33,7 +34,7 @@ RUN usermod -l ccc -d /home/ccc -m bun && \\
     echo "ccc ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Setup directories
-RUN mkdir -p /workspace /home/ccc/.local/bin /commandhistory && \\
+RUN mkdir -p /workspace /home/ccc/.local/bin /home/ccc/.npm-global /commandhistory && \\
     chown -R ccc:ccc /workspace /home/ccc /commandhistory
 
 # Install git-delta
@@ -57,13 +58,17 @@ WORKDIR /workspace
 ENV SHELL=/bin/zsh
 ENV EDITOR=nano
 ENV DEVCONTAINER=true
-ENV PATH="/home/ccc/.local/bin:/home/ccc/.cargo/bin:$PATH"
+ENV NPM_CONFIG_PREFIX=/home/ccc/.npm-global
+ENV PATH="/home/ccc/.npm-global/bin:/home/ccc/.local/bin:/home/ccc/.cargo/bin:$PATH"
 
-# Install Rust and shpool
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \\
+# Install Rust and shpool (with BuildKit cache for faster rebuilds)
+RUN mkdir -p /home/ccc/.cargo/bin /home/ccc/.cargo/registry /home/ccc/.cargo/git
+RUN --mount=type=cache,target=/home/ccc/.cargo/registry,uid=1000,gid=1000 \\
+    --mount=type=cache,target=/home/ccc/.cargo/git,uid=1000,gid=1000 \\
+    --mount=type=cache,target=/tmp/cargo-target,uid=1000,gid=1000 \\
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \\
     . "$HOME/.cargo/env" && \\
-    cargo install shpool && \\
-    rm -rf ~/.cargo/registry ~/.cargo/git
+    CARGO_TARGET_DIR=/tmp/cargo-target cargo install shpool
 
 ${agentSnippets}
 

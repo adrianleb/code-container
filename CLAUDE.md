@@ -1,6 +1,6 @@
 # CCC Project Guidelines
 
-CCC (Coding Container CLI) is a TypeScript/Bun CLI for running AI coding agents in Docker containers with network isolation.
+CCC (Code Container CLI) is a TypeScript/Bun CLI for running AI coding agents in Docker containers with network isolation.
 
 ## Development
 

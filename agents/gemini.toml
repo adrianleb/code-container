@@ -1,6 +1,6 @@
 name = "gemini"
 description = "Gemini CLI by Google"
-install_cmd = "npm install -g @google/gemini-cli"
+install_cmd = "bun install -g @google/gemini-cli"
 run_cmd = "gemini"
 version_cmd = "gemini --version"
 config_path = "/home/ccc/.gemini"
@@ -51,5 +51,5 @@ auth_check_files = ["settings.json", "credentials.json"]
 [dockerfile]
 snippet = """
 # Install Google Gemini CLI (requires Node.js 20+)
-RUN npm install -g @google/gemini-cli
+RUN bun install -g @google/gemini-cli
 """

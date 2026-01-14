@@ -124,7 +124,7 @@ Create a TOML file in `~/.config/ccc/agents/`:
 
 ```toml
 name = "myagent"
-install_cmd = "npm install -g myagent"
+install_cmd = "bun install -g myagent"
 run_cmd = "myagent"
 version_cmd = "myagent --version"
 config_path = "/home/ccc/.myagent"

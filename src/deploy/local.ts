@@ -99,9 +99,13 @@ export async function generateContainerSSHKeys(outputDir: string): Promise<strin
   return "";
 }
 
-export function buildContainer(outputDir: string): Promise<void> {
+export function buildContainer(outputDir: string, options: { noCache?: boolean } = {}): Promise<void> {
   return new Promise((resolve, reject) => {
-    const result = childProcess.spawn("docker", ["compose", "build"], {
+    const args = ["compose", "build"];
+    if (options.noCache) {
+      args.push("--no-cache");
+    }
+    const result = childProcess.spawn("docker", args, {
       cwd: outputDir,
       stdio: "inherit",
     });
@@ -124,9 +128,10 @@ export function buildContainer(outputDir: string): Promise<void> {
   });
 }
 
-export async function startContainer(outputDir: string): Promise<void> {
+export async function startContainer(outputDir: string, forceRecreate = false): Promise<void> {
   try {
-    childProcess.execSync("docker compose up -d", {
+    const cmd = forceRecreate ? "docker compose up -d --force-recreate" : "docker compose up -d";
+    childProcess.execSync(cmd, {
       cwd: outputDir,
       stdio: "inherit",
     });
