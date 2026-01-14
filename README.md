@@ -1,37 +1,27 @@
-<p align="center">
-<pre>
-   ██████╗ ██████╗ ██████╗
-  ██╔════╝██╔════╝██╔════╝
-  ██║     ██║     ██║
-  ██║     ██║     ██║
-  ╚██████╗╚██████╗╚██████╗
-   ╚═════╝ ╚═════╝ ╚═════╝
-</pre>
-  <strong>Coding Container CLI</strong><br>
-  Run AI coding agents in isolated Docker containers
-</p>
+# Code Container CLI
 
-<p align="center">
-  <a href="#installation">Installation</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#features">Features</a> •
-  <a href="#contributing">Contributing</a>
-</p>
+Run AI coding agents locally or remotely in Docker containers with persistent sessions and network isolation.
 
 ---
 
-CCC makes it easy to run AI coding agents (Claude, Codex, Gemini, OpenCode) in secure, isolated Docker containers. Run locally or on a remote server, and connect from your laptop, phone, or Telegram.
-
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│   Laptop ──────┐                                                │
-│   Phone ───────┼──► Tailscale ──► VPS ──► Docker ──► Agents    │
-│   Telegram ────┘                           │                    │
-│                                        Firewall                 │
-│                                    (API access only)            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│  LOCAL:   Laptop ─────────────────────────┐                            │
+│           Telegram ───────────────────────┼──► Docker ──► Agents       │
+│           Phone ──► Tailscale ────────────┘       │                    │
+│                                               Firewall                 │
+│                                           (API access only)            │
+│                                                                        │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  REMOTE:  Laptop ───────┐                                              │
+│           Phone ────────┼──► Tailscale ──► VPS ──► Docker ──► Agents   │
+│           Telegram ─────┘                             │                │
+│                                                   Firewall             │
+│                                               (API access only)        │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
