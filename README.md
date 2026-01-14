@@ -31,7 +31,7 @@ Run AI coding agents locally or remotely in Docker containers with persistent se
 - **Multi-Agent** — Claude, Codex, Gemini, OpenCode, or bring your own
 - **Remote Hosting** — Deploy to any VPS, manage multiple hosts
 - **Mobile Access** — Connect via SSH + Tailscale using `ccc-server`
-- **Telegram Bot** — Chat with agents via [takopi](https://github.com/AbanteAI/takopi)
+- **Telegram Bot** — Chat with agents via [takopi](https://github.com/banteg/takopi)
 
 ## Installation
 
