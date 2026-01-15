@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, expect, test } from "bun:test";
+import { beforeEach, afterAll, expect, test, mock } from "bun:test";
 
 const calls = {
   execSync: [] as Array<{ cmd: string; opts: unknown }>,
@@ -6,42 +6,44 @@ const calls = {
   spawnSync: [] as Array<{ cmd: string; args: string[] }>,
 };
 
+mock.restore();
+
+const childProcessMock = () => ({
+  execSync: (cmd: string, opts: unknown) => {
+    calls.execSync.push({ cmd, opts });
+    return "ok";
+  },
+  spawn: (cmd: string, args: string[]) => {
+    calls.spawn.push({ cmd, args });
+    return {
+      on: () => {},
+    };
+  },
+  spawnSync: (cmd: string, args: string[]) => {
+    calls.spawnSync.push({ cmd, args });
+    return { status: 0 };
+  },
+});
+
+mock.module("child_process", childProcessMock);
+mock.module("node:child_process", childProcessMock);
+
 const {
   sshExec,
   scpFile,
   scpDir,
   attachRemote,
   listRemoteSessions,
-  childProcess,
 } = await import(`../src/deploy/remote.ts?${Date.now()}`);
-const originalExecSync = childProcess.execSync;
-const originalSpawn = childProcess.spawn;
-const originalSpawnSync = childProcess.spawnSync;
 
 beforeEach(() => {
   calls.execSync.length = 0;
   calls.spawn.length = 0;
   calls.spawnSync.length = 0;
-  childProcess.execSync = (cmd: string, opts: unknown) => {
-    calls.execSync.push({ cmd, opts });
-    return "ok";
-  };
-  childProcess.spawn = (cmd: string, args: string[]) => {
-    calls.spawn.push({ cmd, args });
-    return {
-      on: () => {},
-    };
-  };
-  childProcess.spawnSync = (cmd: string, args: string[]) => {
-    calls.spawnSync.push({ cmd, args });
-    return { status: 0 };
-  };
 });
 
-afterEach(() => {
-  childProcess.execSync = originalExecSync;
-  childProcess.spawn = originalSpawn;
-  childProcess.spawnSync = originalSpawnSync;
+afterAll(() => {
+  mock.restore();
 });
 
 test("sshExec escapes quotes", () => {

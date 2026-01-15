@@ -105,6 +105,12 @@ else
     sudo /usr/local/bin/init-firewall.sh || echo "Warning: Firewall init failed"
 fi
 
+# Setup XDG_RUNTIME_DIR for shpool
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+sudo mkdir -p "$XDG_RUNTIME_DIR"
+sudo chown $(id -u):$(id -g) "$XDG_RUNTIME_DIR"
+sudo chmod 700 "$XDG_RUNTIME_DIR"
+
 # Fix SSH key permissions if mounted
 if [ -d "$HOME/.ssh" ] && [ "$(ls -A $HOME/.ssh 2>/dev/null)" ]; then
     chmod 700 "$HOME/.ssh" 2>/dev/null || true

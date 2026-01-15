@@ -1,7 +1,8 @@
 import { expect, test, beforeEach, afterAll, mock } from "bun:test";
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import * as os from "os";
 
 const calls = {
   attachSession: [] as Array<{ container: string; session: string; options: unknown }>,
@@ -33,7 +34,13 @@ const configState = {
   default_agent: undefined as string | undefined,
 };
 
+const originalHome = process.env.HOME;
+const testHome = mkdtempSync(join(tmpdir(), "ccc-home-"));
+process.env.HOME = testHome;
+
 mock.restore();
+mock.module("os", () => ({ ...os, homedir: () => testHome }));
+mock.module("node:os", () => ({ ...os, homedir: () => testHome }));
 mock.module("../src/agents/loader.ts", () => ({
   loadAgents: () => ({ codex: agent }),
   listAvailableAgents: () => [],
@@ -139,10 +146,11 @@ mock.module("../src/deploy/remote.ts", () => ({
   showRemoteLogs: () => {},
   restartRemote: () => {},
   sshExec: () => "",
+  syncRemoteFiles: () => {},
   getRemoteHostStatus: () => ({
     reachable: true,
-    containerExists: true,
-    containerRunning: true,
+    exists: true,
+    running: true,
     takopi: false,
     sessions: [],
     agents: [],
@@ -202,6 +210,11 @@ beforeEach(() => {
 
 afterAll(() => {
   mock.restore();
+  if (originalHome) {
+    process.env.HOME = originalHome;
+  } else {
+    delete process.env.HOME;
+  }
 });
 
 test("default attach uses main session", async () => {
@@ -269,19 +282,20 @@ test("remote add forwards arguments", async () => {
   expect(calls.addRemote[0]).toEqual(["box", "user@box", ["alias1", "alias2"]]);
 });
 
-test("build uses specified output directory", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "ccc-build-"));
-  writeFileSync(join(tempDir, "Dockerfile"), "FROM scratch\n");
+test("build uses default output directory", async () => {
+  const outputDir = join(testHome, ".ccc");
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(join(outputDir, "Dockerfile"), "FROM scratch\n");
   const program = createCLI();
-  await program.parseAsync(["node", "ccc", "build", "--output", tempDir]);
-  expect(calls.buildContainer).toEqual([tempDir]);
+  await program.parseAsync(["node", "ccc", "build"]);
+  expect(calls.buildContainer).toEqual([outputDir]);
 });
 
-test("start uses specified output directory", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "ccc-start-"));
+test("start uses default output directory", async () => {
+  const outputDir = join(testHome, ".ccc");
   const program = createCLI();
-  await program.parseAsync(["node", "ccc", "start", "--output", tempDir]);
-  expect(calls.startContainer).toEqual([tempDir]);
+  await program.parseAsync(["node", "ccc", "start"]);
+  expect(calls.startContainer).toEqual([outputDir]);
 });
 
 test("update runs agent install command in container", async () => {

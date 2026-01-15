@@ -76,6 +76,7 @@ import {
   sshExec,
   getRemoteHostStatus,
   updateRemoteBinary,
+  syncRemoteFiles,
 } from "./deploy/remote.ts";
 import * as ui from "./utils/ui.ts";
 import {
@@ -91,12 +92,6 @@ function getAgents(): Record<string, Agent> {
 const DEFAULT_CONTAINER_NAME = "ccc";
 const DEFAULT_OUTPUT_DIR = join(homedir(), ".ccc");
 const CLI_VERSION = (pkg as { version?: string }).version ?? "0.0.0";
-
-function warnDeprecatedOutputDir(outputDir: string): void {
-  if (outputDir !== DEFAULT_OUTPUT_DIR) {
-    ui.warning(`--output is deprecated and will be removed. Use ${ui.style.path(DEFAULT_OUTPUT_DIR)} instead.`);
-  }
-}
 
 export function createCLI(): Command {
   const program = new Command();
@@ -163,7 +158,6 @@ export function createCLI(): Command {
     .command("init [target]")
     .description("Initialize a new coding container")
     .option("--agents <names>", "Agent(s) to use (comma-separated, e.g., claude,codex)")
-    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .option("--no-build", "Skip building the container")
     .option("--no-cache", "Build without Docker cache")
     .action(async (target, options) => {
@@ -292,7 +286,7 @@ export function createCLI(): Command {
         return;
       }
 
-      warnDeprecatedOutputDir(options.output);
+      const outputDir = DEFAULT_OUTPUT_DIR;
       ui.welcome();
       console.log(`${ui.symbols.rocket} ${ui.style.bold("Initializing local coding container...")}\n`);
       console.log(`  ${ui.style.dim("Agents:")} ${selectedAgents.map((a) => a.name).join(", ")}\n`);
@@ -333,7 +327,7 @@ export function createCLI(): Command {
       const userFirewallDomains = getUserFirewallDomains();
       generateFiles({
         agents: selectedAgents,
-        outputDir: options.output,
+        outputDir,
         gitUserName,
         gitUserEmail,
         extensions,
@@ -341,38 +335,45 @@ export function createCLI(): Command {
       });
 
       ui.header(ui.step(4, 5, "Setting up container SSH key"));
-      const sshDir = join(options.output, "ssh-keys");
-      await generateContainerSSHKeys(options.output);
+      const sshDir = join(outputDir, "ssh-keys");
+      await generateContainerSSHKeys(outputDir);
 
+      // Store SSH key to print at the end
       const pubKeyPath = join(sshDir, "id_ed25519.pub");
-      if (existsSync(pubKeyPath)) {
-        const pubKey = readFileSync(pubKeyPath, "utf-8").trim();
+      const pubKey = existsSync(pubKeyPath) ? readFileSync(pubKeyPath, "utf-8").trim() : null;
+      if (pubKey) {
+        ui.item("Container SSH key generated", "ok");
+      }
+
+      ui.header(ui.step(5, 5, "Container setup"));
+
+      console.log(`\n  ${ui.symbols.folder} Output directory: ${ui.style.path(outputDir)}`);
+
+      if (options.build) {
+        console.log(`\n  ${ui.symbols.package} Building container... ${ui.style.dim("(this may take a few minutes)")}`);
+        await buildContainer(outputDir, { noCache: !options.cache });
+
+        console.log(`\n  ${ui.symbols.rocket} Starting container...`);
+        await startContainer(outputDir);
+        ui.item("Container started", "ok");
+      } else {
+        console.log(`\n  ${ui.style.dim("Files created. To build and start the container:")}`);
+        ui.showCommand("ccc build && ccc start");
+      }
+
+      ui.success("Container initialized!");
+
+      // Print SSH key at the very end so it's easy to find
+      if (pubKey) {
         console.log(`\n  ${ui.symbols.key} ${ui.style.bold("Container SSH public key")} ${ui.style.dim("(add to GitHub):")}`);
         console.log(`  ${ui.style.dim("─".repeat(60))}`);
         console.log(`  ${ui.style.info(pubKey)}`);
         console.log(`  ${ui.style.dim("─".repeat(60))}`);
       }
 
-      ui.header(ui.step(5, 5, "Container setup"));
-
-      console.log(`\n  ${ui.symbols.folder} Output directory: ${ui.style.path(options.output)}`);
-
-      if (options.build) {
-        console.log(`\n  ${ui.symbols.package} Building container... ${ui.style.dim("(this may take a few minutes)")}`);
-        await buildContainer(options.output, { noCache: options.noCache });
-      } else {
-        console.log(`\n  ${ui.style.dim("Files created. To build the container:")}`);
-        ui.showCommand(`cd ${options.output} && docker compose build`);
-        console.log(`\n  ${ui.style.dim("Or simply run:")}`);
-        ui.showCommand("ccc build");
-      }
-
-      ui.success("Container initialized!");
-
       console.log(`\n  ${ui.symbols.lightning} ${ui.style.bold("Next steps:")}`);
       console.log(`  ${ui.style.dim("1.")} Add the SSH key above to GitHub`);
-      console.log(`  ${ui.style.dim("2.")} Build the container: ${ui.style.command("ccc build")}`);
-      console.log(`  ${ui.style.dim("3.")} Start coding: ${ui.style.command("ccc")}`);
+      console.log(`  ${ui.style.dim("2.")} Start coding: ${ui.style.command("ccc")}`);
 
       ui.hint(`Detach from session: ${ui.style.command("Ctrl+Space Ctrl+Q")}`);
     });
@@ -380,7 +381,6 @@ export function createCLI(): Command {
   program
     .command("build [target]")
     .description("Build/rebuild the container")
-    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .option("--no-cache", "Build without Docker cache")
     .action(async (target, options) => {
       const host = resolveTarget(target);
@@ -392,7 +392,15 @@ export function createCLI(): Command {
       if (host) {
         console.log(`\n${ui.symbols.package} ${ui.style.bold("Building container on")} ${ui.style.highlight(host)}...\n`);
         try {
-          await buildRemote(host, { noCache: options.noCache });
+          // Sync updated files to remote before building
+          const allAgents = Object.values(getAgents());
+          if (allAgents.length > 0) {
+            console.log(`  ${ui.style.dim("Syncing container files...")}`);
+            syncRemoteFiles(host, allAgents);
+            ui.item("Files synced", "ok");
+            console.log();
+          }
+          await buildRemote(host, { noCache: !options.cache });
         } catch {
           process.exit(1);
         }
@@ -401,20 +409,18 @@ export function createCLI(): Command {
 
       console.log(`\n${ui.symbols.package} ${ui.style.bold("Building container...")}\n`);
 
-      warnDeprecatedOutputDir(options.output);
-      if (!existsSync(join(options.output, "Dockerfile"))) {
+      if (!existsSync(join(DEFAULT_OUTPUT_DIR, "Dockerfile"))) {
         ui.error("No Dockerfile found.");
         console.log(`\n  Run ${ui.style.command("ccc init")} first to generate the container files.`);
         process.exit(1);
       }
 
-      await buildContainer(options.output, { noCache: options.noCache });
+      await buildContainer(DEFAULT_OUTPUT_DIR, { noCache: !options.cache });
     });
 
   program
     .command("start [target]")
     .description("Start the container")
-    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .action(async (target, options) => {
       const host = resolveTarget(target);
 
@@ -430,8 +436,7 @@ export function createCLI(): Command {
       }
 
       console.log(`\n${ui.symbols.rocket} ${ui.style.bold("Starting container...")}\n`);
-      warnDeprecatedOutputDir(options.output);
-      await startContainer(options.output);
+      await startContainer(DEFAULT_OUTPUT_DIR);
       ui.success("Container started!");
       ui.hint(`Connect with: ${ui.style.command("ccc")}`);
     });
@@ -489,9 +494,9 @@ export function createCLI(): Command {
         const remoteStatus = getRemoteHostStatus(config.host);
         if (!remoteStatus.reachable) {
           console.log(`    ${ui.style.warning("unreachable")}`);
-        } else if (!remoteStatus.containerExists) {
+        } else if (!remoteStatus.exists) {
           console.log(`    ${ui.style.dim("Container not initialized")}`);
-        } else if (!remoteStatus.containerRunning) {
+        } else if (!remoteStatus.running) {
           console.log(`    ${ui.style.dim("Container stopped")}`);
         } else {
           if (remoteStatus.sessions.length === 0) {
@@ -610,14 +615,14 @@ export function createCLI(): Command {
             ui.style.dim("-"), "-", ui.style.dim("-"),
             0, []
           );
-        } else if (!remoteStatus.containerExists) {
+        } else if (!remoteStatus.exists) {
           formatRow(
             label,
             ui.style.dim("○"), "not init", ui.style.dim("not init"),
             ui.style.dim("-"), "-", ui.style.dim("-"),
             0, []
           );
-        } else if (!remoteStatus.containerRunning) {
+        } else if (!remoteStatus.running) {
           formatRow(
             label,
             ui.style.warn(), "stopped", ui.style.warning("stopped"),
@@ -962,12 +967,8 @@ export function createCLI(): Command {
     .argument("[target]", "Remote target (@alias) or local")
     .option("--no-build", "Only enable config, skip rebuild (for adding multiple agents)")
     .option("--no-cache", "Build without Docker cache")
-    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .action(async (name, target, options) => {
       const host = resolveTarget(target);
-      if (!host) {
-        warnDeprecatedOutputDir(options.output);
-      }
       const templates = listAvailableAgents();
       const template = templates.find((t) => t.name === name);
 
@@ -1009,13 +1010,15 @@ export function createCLI(): Command {
 
         try {
           if (host) {
-            // For remote, we need to regenerate locally then sync
-            // For now, just rebuild which will use existing files
-            // TODO: implement remote file regeneration
-            ui.warning("Remote agent add requires manual file sync. Running rebuild...");
-            await buildRemote(host, { noCache: options.noCache });
+            // Regenerate and sync files to remote, then rebuild
+            console.log(`  ${ui.style.dim("Syncing container files to remote...")}`);
+            syncRemoteFiles(host, allAgents);
+            ui.item("Files synced to remote", "ok");
+
+            console.log(`\n  ${ui.style.dim("Building container...")}\n`);
+            await buildRemote(host, { noCache: !options.cache });
           } else {
-            if (!existsSync(join(options.output, "Dockerfile"))) {
+            if (!existsSync(join(DEFAULT_OUTPUT_DIR, "Dockerfile"))) {
               ui.error("No Dockerfile found. Run 'ccc init' first.");
               process.exit(1);
             }
@@ -1026,14 +1029,14 @@ export function createCLI(): Command {
             const allUserDomains = getUserFirewallDomains();
             generateFiles({
               agents: allAgents,
-              outputDir: options.output,
+              outputDir: DEFAULT_OUTPUT_DIR,
               extensions: allExtensions,
               userFirewallDomains: allUserDomains,
             });
 
             // Build container
             console.log(`\n  ${ui.style.dim("Building container...")}\n`);
-            await buildContainer(options.output, { noCache: options.noCache });
+            await buildContainer(DEFAULT_OUTPUT_DIR, { noCache: !options.cache });
           }
           ui.item("Container rebuilt", "ok");
 
@@ -1042,7 +1045,7 @@ export function createCLI(): Command {
           if (host) {
             await startRemote(host);
           } else {
-            await startContainer(options.output, true); // force recreate
+            await startContainer(DEFAULT_OUTPUT_DIR, true); // force recreate
           }
           ui.item("Container started", "ok");
         } catch (err) {

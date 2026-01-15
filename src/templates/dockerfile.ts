@@ -58,6 +58,7 @@ ENV SHELL=/bin/zsh
 ENV EDITOR=nano
 ENV DEVCONTAINER=true
 ENV NPM_CONFIG_PREFIX=/home/ccc/.npm-global
+ENV XDG_RUNTIME_DIR=/run/user/1000
 ENV PATH="/home/ccc/.npm-global/bin:/home/ccc/.local/bin:/home/ccc/.cargo/bin:$PATH"
 
 # Install Rust and shpool (with BuildKit cache for faster rebuilds)

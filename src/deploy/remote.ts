@@ -3,27 +3,24 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, mkdtempSync, readdi
 import { join } from "path";
 import { tmpdir, homedir } from "os";
 import type { Agent } from "../agents/types.ts";
-import { loadAgents } from "../agents/loader.ts";
-import { checkAgentInstalled } from "../agents/auth.ts";
-import { generateDockerfile } from "../templates/dockerfile.ts";
-import { generateCompose } from "../templates/compose.ts";
-import { generateEntrypoint } from "../templates/entrypoint.ts";
-import { generateFirewall } from "../templates/firewall.ts";
+import { generateContainerFiles } from "./files.ts";
+import { RemoteExecutor } from "./executor.ts";
+import { ContainerManager, type ContainerStatus } from "./container.ts";
 import { loadExtensions } from "../extensions/loader.ts";
 import { getUserFirewallDomains } from "../firewall/config.ts";
 import { detectRemotePlatform, ensureBinaryForPlatform } from "./binary.ts";
 import * as ui from "../utils/ui.ts";
 
-export const childProcess = { execSync, spawn, spawnSync };
-
 const REMOTE_CCC_DIR = "~/.ccc";
 const REMOTE_BIN_DIR = "~/bin";
 
+// ============================================================================
+// SSH Utilities
+// ============================================================================
+
 export function testSSHConnection(host: string): boolean {
   try {
-    childProcess.execSync(`ssh -o BatchMode=yes -o ConnectTimeout=5 ${host} "echo ok"`, {
-      stdio: "pipe",
-    });
+    execSync(`ssh -o BatchMode=yes -o ConnectTimeout=5 ${host} "echo ok"`, { stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -36,30 +33,27 @@ export function sshExec(
   options: { stdio?: "inherit" | "pipe"; ignoreError?: boolean } = {}
 ): string {
   const { stdio = "pipe", ignoreError = false } = options;
-
   try {
-    const result = childProcess.execSync(`ssh ${host} "${command.replace(/"/g, '\\"')}"`, {
+    const result = execSync(`ssh ${host} "${command.replace(/"/g, '\\"')}"`, {
       encoding: "utf-8",
       stdio: stdio === "inherit" ? "inherit" : "pipe",
     });
     return result?.trim() || "";
   } catch (error) {
-    if (ignoreError) {
-      return "";
-    }
+    if (ignoreError) return "";
     throw error;
   }
 }
 
 export function scpFile(localPath: string, host: string, remotePath: string): void {
-  childProcess.execSync(`scp -q "${localPath}" "${host}:${remotePath}"`, { stdio: "pipe" });
+  execSync(`scp -q "${localPath}" "${host}:${remotePath}"`, { stdio: "pipe" });
 }
 
 export function scpDir(localPath: string, host: string, remotePath: string): void {
-  childProcess.execSync(`scp -q -r "${localPath}" "${host}:${remotePath}"`, { stdio: "pipe" });
+  execSync(`scp -q -r "${localPath}" "${host}:${remotePath}"`, { stdio: "pipe" });
 }
 
-export function checkRemoteDocker(host: string): boolean {
+function checkRemoteDocker(host: string): boolean {
   try {
     sshExec(host, "docker --version");
     return true;
@@ -68,6 +62,99 @@ export function checkRemoteDocker(host: string): boolean {
   }
 }
 
+// ============================================================================
+// Remote Container Manager Factory
+// ============================================================================
+
+function getRemoteManager(host: string): ContainerManager {
+  const executor = new RemoteExecutor(host, REMOTE_CCC_DIR);
+  return new ContainerManager(executor, "ccc");
+}
+
+// ============================================================================
+// File Generation & Sync
+// ============================================================================
+
+interface GeneratedFilesResult {
+  tempDir: string;
+  sshKeysDir: string;
+}
+
+/**
+ * Generate container files to a temp directory for remote deployment.
+ */
+function generateRemoteFiles(agents: Agent[], options: { gitUserName?: string; gitUserEmail?: string } = {}): GeneratedFilesResult {
+  const tempDir = mkdtempSync(join(tmpdir(), "ccc-"));
+  const extensions = Object.values(loadExtensions());
+  const userFirewallDomains = getUserFirewallDomains();
+
+  const files = generateContainerFiles({
+    agents,
+    extensions,
+    userFirewallDomains,
+    gitUserName: options.gitUserName,
+    gitUserEmail: options.gitUserEmail,
+  });
+
+  writeFileSync(join(tempDir, "Dockerfile"), files.dockerfile);
+  ui.item("Dockerfile", "ok");
+
+  writeFileSync(join(tempDir, "docker-compose.yml"), files.compose);
+  ui.item("docker-compose.yml", "ok");
+
+  writeFileSync(join(tempDir, "entrypoint.sh"), files.entrypoint);
+  ui.item("entrypoint.sh", "ok");
+
+  writeFileSync(join(tempDir, "init-firewall.sh"), files.firewall);
+  ui.item("init-firewall.sh", "ok");
+
+  // Generate SSH keys
+  const sshKeysDir = join(tempDir, "ssh-keys");
+  mkdirSync(sshKeysDir, { recursive: true });
+  const keyPath = join(sshKeysDir, "id_ed25519");
+  execSync(`ssh-keygen -t ed25519 -f "${keyPath}" -N "" -C "ccc-container" -q`);
+  ui.item("Container SSH key generated", "ok");
+
+  try {
+    execSync(`ssh-keyscan github.com gitlab.com bitbucket.org > "${join(sshKeysDir, "known_hosts")}" 2>/dev/null`);
+  } catch {
+    // Ignore ssh-keyscan errors
+  }
+
+  return { tempDir, sshKeysDir };
+}
+
+/**
+ * Sync container files to remote (used when updating agents).
+ */
+export function syncRemoteFiles(host: string, agents: Agent[]): void {
+  const tempDir = mkdtempSync(join(tmpdir(), "ccc-sync-"));
+  const extensions = Object.values(loadExtensions());
+  const userFirewallDomains = getUserFirewallDomains();
+
+  const files = generateContainerFiles({
+    agents,
+    extensions,
+    userFirewallDomains,
+  });
+
+  writeFileSync(join(tempDir, "Dockerfile"), files.dockerfile);
+  writeFileSync(join(tempDir, "docker-compose.yml"), files.compose);
+  writeFileSync(join(tempDir, "entrypoint.sh"), files.entrypoint);
+  writeFileSync(join(tempDir, "init-firewall.sh"), files.firewall);
+
+  scpFile(join(tempDir, "Dockerfile"), host, `${REMOTE_CCC_DIR}/Dockerfile`);
+  scpFile(join(tempDir, "docker-compose.yml"), host, `${REMOTE_CCC_DIR}/docker-compose.yml`);
+  scpFile(join(tempDir, "entrypoint.sh"), host, `${REMOTE_CCC_DIR}/entrypoint.sh`);
+  scpFile(join(tempDir, "init-firewall.sh"), host, `${REMOTE_CCC_DIR}/init-firewall.sh`);
+
+  sshExec(host, `chmod +x ${REMOTE_CCC_DIR}/entrypoint.sh ${REMOTE_CCC_DIR}/init-firewall.sh`);
+}
+
+// ============================================================================
+// Remote Initialization
+// ============================================================================
+
 export async function initRemote(
   host: string,
   agents: Agent[],
@@ -75,6 +162,7 @@ export async function initRemote(
 ): Promise<void> {
   const { build = false, gitUserName = "", gitUserEmail = "" } = options;
 
+  // Step 1: Test SSH connection
   ui.header(ui.step(1, 5, "Testing SSH connection"));
   if (!testSSHConnection(host)) {
     ui.item(`Cannot connect to ${host}`, "fail");
@@ -85,6 +173,7 @@ export async function initRemote(
   }
   ui.item(`Connected to ${ui.style.highlight(host)}`, "ok");
 
+  // Step 2: Check Docker
   ui.header(ui.step(2, 5, "Checking remote Docker"));
   if (!checkRemoteDocker(host)) {
     ui.item("Docker not found on remote", "fail");
@@ -104,51 +193,20 @@ export async function initRemote(
     throw new Error("Docker Compose not found on remote");
   }
 
+  // Step 3: Generate files
   ui.header(ui.step(3, 5, "Generating container files"));
+  const { tempDir, sshKeysDir } = generateRemoteFiles(agents, { gitUserName, gitUserEmail });
 
-  const tempDir = mkdtempSync(join(tmpdir(), "ccc-"));
-
-  const extensions = Object.values(loadExtensions());
-  const userFirewallDomains = getUserFirewallDomains();
-
-  const dockerfile = generateDockerfile({ agents });
-  writeFileSync(join(tempDir, "Dockerfile"), dockerfile);
-  ui.item("Dockerfile", "ok");
-
-  const compose = generateCompose({ agents, gitUserName, gitUserEmail });
-  writeFileSync(join(tempDir, "docker-compose.yml"), compose);
-  ui.item("docker-compose.yml", "ok");
-
-  const entrypoint = generateEntrypoint({ agents, extensions });
-  writeFileSync(join(tempDir, "entrypoint.sh"), entrypoint);
-  ui.item("entrypoint.sh", "ok");
-
-  const firewall = generateFirewall({ agents, extensions, userDomains: userFirewallDomains });
-  writeFileSync(join(tempDir, "init-firewall.sh"), firewall);
-  ui.item("init-firewall.sh", "ok");
-
-  // Detect remote platform and get appropriate binary
+  // Detect remote platform and get binary
   ui.item("Detecting remote platform...", "pending");
   const remotePlatform = detectRemotePlatform(host);
   if (!remotePlatform) {
     throw new Error("Could not detect remote platform");
   }
   ui.item(`Remote platform: ${remotePlatform.os}-${remotePlatform.arch}`, "ok");
-
   const binaryPath = await ensureBinaryForPlatform(remotePlatform);
 
-  const sshKeysDir = join(tempDir, "ssh-keys");
-  mkdirSync(sshKeysDir, { recursive: true });
-  const keyPath = join(sshKeysDir, "id_ed25519");
-  childProcess.execSync(`ssh-keygen -t ed25519 -f "${keyPath}" -N "" -C "ccc-container" -q`);
-  ui.item("Container SSH key generated", "ok");
-
-  try {
-    childProcess.execSync(
-      `ssh-keyscan github.com gitlab.com bitbucket.org > "${join(sshKeysDir, "known_hosts")}" 2>/dev/null`
-    );
-  } catch {}
-
+  // Step 4: Copy files to remote
   ui.header(ui.step(4, 5, "Copying files to remote"));
 
   sshExec(host, `mkdir -p ${REMOTE_CCC_DIR} ${REMOTE_BIN_DIR}`, { ignoreError: true });
@@ -164,15 +222,16 @@ export async function initRemote(
   scpDir(sshKeysDir, host, `${REMOTE_CCC_DIR}/`);
   ui.item("Copied SSH keys", "ok");
 
+  // Copy skills and mcp-configs if they exist
   const localSkillsDir = join(homedir(), ".ccc", "skills");
   if (existsSync(localSkillsDir) && readdirSync(localSkillsDir).length > 0) {
-    childProcess.execSync(`scp -q -r "${localSkillsDir}/." "${host}:${REMOTE_CCC_DIR}/skills"`, { stdio: "pipe" });
+    execSync(`scp -q -r "${localSkillsDir}/." "${host}:${REMOTE_CCC_DIR}/skills"`, { stdio: "pipe" });
     ui.item("Copied skills", "ok");
   }
 
   const localMcpDir = join(homedir(), ".ccc", "mcp-configs");
   if (existsSync(localMcpDir) && readdirSync(localMcpDir).length > 0) {
-    childProcess.execSync(`scp -q -r "${localMcpDir}/." "${host}:${REMOTE_CCC_DIR}/mcp-configs"`, { stdio: "pipe" });
+    execSync(`scp -q -r "${localMcpDir}/." "${host}:${REMOTE_CCC_DIR}/mcp-configs"`, { stdio: "pipe" });
     ui.item("Copied MCP configs", "ok");
   }
 
@@ -182,12 +241,14 @@ export async function initRemote(
 
   sshExec(host, `chmod +x ${REMOTE_CCC_DIR}/entrypoint.sh ${REMOTE_CCC_DIR}/init-firewall.sh`);
 
+  // Print SSH key
   const pubKey = readFileSync(join(sshKeysDir, "id_ed25519.pub"), "utf-8").trim();
   console.log(`\n  ${ui.symbols.key} ${ui.style.bold("Container SSH public key")} ${ui.style.dim("(add to GitHub):")}`);
   console.log(`  ${ui.style.dim("─".repeat(60))}`);
   console.log(`  ${ui.style.info(pubKey)}`);
   console.log(`  ${ui.style.dim("─".repeat(60))}`);
 
+  // Step 5: Build (optional)
   ui.header(ui.step(5, 5, "Container setup"));
 
   if (build) {
@@ -210,39 +271,64 @@ export async function initRemote(
   ui.hint(`You can also SSH directly: ${ui.style.command(`ssh ${host}`)}, then run ${ui.style.command("ccc")}`);
 }
 
+// ============================================================================
+// Container Operations (using ContainerManager)
+// ============================================================================
+
 export async function buildRemote(host: string, options: { noCache?: boolean } = {}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const buildCmd = options.noCache ? "docker compose build --no-cache" : "docker compose build";
-    const result = childProcess.spawn("ssh", [host, `cd ${REMOTE_CCC_DIR} && ${buildCmd}`], {
-      stdio: "inherit",
-    });
-
-    result.on("close", (code) => {
-      if (code === 0) {
-        ui.success("Remote container built successfully!");
-        resolve();
-      } else {
-        ui.error(`Remote build failed with code ${code}`);
-        reject(new Error(`Remote build failed with code ${code}`));
-      }
-    });
-
-    result.on("error", (err) => {
-      ui.error(`Failed to start remote build: ${err.message}`);
-      reject(err);
-    });
-  });
+  return getRemoteManager(host).build(options);
 }
 
 export async function startRemote(host: string): Promise<void> {
-  try {
-    sshExec(host, `cd ${REMOTE_CCC_DIR} && docker compose up -d`, { stdio: "inherit" });
-    ui.success("Remote container started!");
-  } catch (error) {
-    ui.error("Failed to start remote container");
-    throw error;
-  }
+  getRemoteManager(host).start();
 }
+
+export function restartRemote(host: string): void {
+  getRemoteManager(host).restart();
+}
+
+export function listRemoteSessions(host: string): void {
+  getRemoteManager(host).listSessions();
+}
+
+export function killRemoteSession(host: string, sessionName: string): void {
+  getRemoteManager(host).killSession(sessionName);
+}
+
+export function showRemoteLogs(host: string): void {
+  getRemoteManager(host).showLogs();
+}
+
+// ============================================================================
+// Remote Status
+// ============================================================================
+
+export interface RemoteHostStatus extends ContainerStatus {
+  reachable: boolean;
+}
+
+export function getRemoteHostStatus(host: string): RemoteHostStatus {
+  const status: RemoteHostStatus = {
+    reachable: false,
+    exists: false,
+    running: false,
+    takopi: false,
+    sessions: [],
+    agents: [],
+  };
+
+  if (!testSSHConnection(host)) {
+    return status;
+  }
+  status.reachable = true;
+
+  const containerStatus = getRemoteManager(host).getStatus({ host });
+  return { ...status, ...containerStatus };
+}
+
+// ============================================================================
+// Remote Attach (SSH-specific, cannot use ContainerManager)
+// ============================================================================
 
 export function attachRemote(
   host: string,
@@ -265,38 +351,13 @@ export function attachRemote(
 
   args.push(`${REMOTE_BIN_DIR}/ccc ${cccArgs.join(" ")}`);
 
-  const result = childProcess.spawnSync(args[0]!, args.slice(1), {
-    stdio: "inherit",
-  });
-
+  const result = spawnSync(args[0]!, args.slice(1), { stdio: "inherit" });
   process.exit(result.status || 0);
 }
 
-export function listRemoteSessions(host: string): void {
-  try {
-    sshExec(host, `docker exec ccc shpool list 2>/dev/null || echo "(no sessions)"`, {
-      stdio: "inherit",
-    });
-  } catch {
-    console.log(`  ${ui.style.dim("Could not list remote sessions")}`);
-  }
-}
-
-export function killRemoteSession(host: string, sessionName: string): void {
-  sshExec(host, `docker exec ccc shpool kill ${sessionName}`, { stdio: "inherit" });
-  ui.success(`Remote session '${sessionName}' killed`);
-}
-
-export function showRemoteLogs(host: string): void {
-  childProcess.spawn("ssh", ["-t", host, "docker logs ccc --tail 100 -f"], {
-    stdio: "inherit",
-  });
-}
-
-export function restartRemote(host: string): void {
-  sshExec(host, "docker restart ccc", { stdio: "inherit" });
-  ui.success("Remote container restarted!");
-}
+// ============================================================================
+// Binary Management
+// ============================================================================
 
 export async function updateRemoteBinary(host: string): Promise<void> {
   ui.item("Detecting remote platform...", "pending");
@@ -306,78 +367,10 @@ export async function updateRemoteBinary(host: string): Promise<void> {
   }
   ui.item(`Remote platform: ${remotePlatform.os}-${remotePlatform.arch}`, "ok");
 
-  // Force re-download by getting the binary (will use cache or download)
   const binaryPath = await ensureBinaryForPlatform(remotePlatform);
 
-  // Copy to remote
   sshExec(host, `mkdir -p ${REMOTE_BIN_DIR}`, { ignoreError: true });
   scpFile(binaryPath, host, `${REMOTE_BIN_DIR}/ccc`);
   sshExec(host, `chmod +x ${REMOTE_BIN_DIR}/ccc`);
   ui.item("Updated ccc binary on remote", "ok");
-}
-
-export interface RemoteHostStatus {
-  reachable: boolean;
-  containerExists: boolean;
-  containerRunning: boolean;
-  takopi: boolean;
-  sessions: string[];
-  agents: string[];
-}
-
-export function getRemoteHostStatus(host: string): RemoteHostStatus {
-  const status: RemoteHostStatus = {
-    reachable: false,
-    containerExists: false,
-    containerRunning: false,
-    takopi: false,
-    sessions: [],
-    agents: [],
-  };
-
-  // Test SSH connection
-  if (!testSSHConnection(host)) {
-    return status;
-  }
-  status.reachable = true;
-
-  // Check container status
-  try {
-    const result = sshExec(host, "docker inspect -f '{{.State.Running}}' ccc 2>/dev/null");
-    status.containerExists = true;
-    status.containerRunning = result.trim() === "true";
-  } catch {
-    return status;
-  }
-
-  if (status.containerRunning) {
-    // Check takopi
-    try {
-      sshExec(host, "docker exec ccc pgrep -f takopi >/dev/null 2>&1");
-      status.takopi = true;
-    } catch {
-      status.takopi = false;
-    }
-
-    // Get sessions
-    try {
-      const sessionsOutput = sshExec(host, "docker exec ccc shpool list 2>/dev/null");
-      const lines = sessionsOutput.trim().split("\n").filter(Boolean);
-      // Parse shpool list output - skip header line
-      status.sessions = lines.slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean) as string[];
-    } catch {
-      status.sessions = [];
-    }
-
-    // Check installed agents
-    const enabledAgents = loadAgents();
-    for (const [name, agent] of Object.entries(enabledAgents)) {
-      const installStatus = checkAgentInstalled(agent, { host });
-      if (installStatus.installed) {
-        status.agents.push(name);
-      }
-    }
-  }
-
-  return status;
 }

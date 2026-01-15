@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, expect, test } from "bun:test";
+import { beforeEach, afterAll, expect, test, mock } from "bun:test";
 import type { Agent } from "../src/agents/types.ts";
 
 const calls = {
@@ -6,9 +6,25 @@ const calls = {
   spawn: [] as Array<{ cmd: string; args: string[] }>,
 };
 
-const { attachSession, childProcess } = await import(`../src/deploy/local.ts?${Date.now()}`);
-const originalExecSync = childProcess.execSync;
-const originalSpawn = childProcess.spawn;
+mock.restore();
+
+const childProcessMock = () => ({
+  execSync: (cmd: string, opts: unknown) => {
+    calls.execSync.push({ cmd, opts });
+    return "";
+  },
+  spawn: (cmd: string, args: string[]) => {
+    calls.spawn.push({ cmd, args });
+    return {
+      on: () => {},
+    };
+  },
+});
+
+mock.module("child_process", childProcessMock);
+mock.module("node:child_process", childProcessMock);
+
+const { attachSession } = await import(`../src/deploy/local.ts?${Date.now()}`);
 
 const agent: Agent = {
   name: "codex",
@@ -24,21 +40,10 @@ const agent: Agent = {
 beforeEach(() => {
   calls.execSync.length = 0;
   calls.spawn.length = 0;
-  childProcess.execSync = (cmd: string, opts: unknown) => {
-    calls.execSync.push({ cmd, opts });
-    return "";
-  };
-  childProcess.spawn = (cmd: string, args: string[]) => {
-    calls.spawn.push({ cmd, args });
-    return {
-      on: () => {},
-    };
-  };
 });
 
-afterEach(() => {
-  childProcess.execSync = originalExecSync;
-  childProcess.spawn = originalSpawn;
+afterAll(() => {
+  mock.restore();
 });
 
 test("attachSession flushes firewall when noFirewall is set", () => {
@@ -53,20 +58,8 @@ test("attachSession builds yolo command with prompt", () => {
   expect(calls.spawn[0]).toEqual(
     expect.objectContaining({
       cmd: "docker",
-      args: expect.arrayContaining([
-        "exec",
-        "-it",
-        "ccc",
-        "shpool",
-        "attach",
-        "-f",
-        "main",
-        "--",
-        "codex",
-        "--skip",
-        "-p",
-        "fix",
-      ]),
+      args: expect.arrayContaining(["exec", "-it", "ccc", "bash", "-c"]),
     })
   );
+  expect(calls.spawn[0]!.args.join(" ")).toContain("shpool attach -f main -c 'codex --skip -p fix'");
 });

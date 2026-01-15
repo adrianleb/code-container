@@ -185,6 +185,20 @@ fi
 # Create GitHub release
 info "Creating GitHub release..."
 
+# Wait for tag to propagate to GitHub API (fixes race condition after push)
+info "Waiting for tag to be available on GitHub..."
+for i in {1..10}; do
+  if gh api "repos/adrianleb/code-container/git/refs/tags/v$VERSION" &>/dev/null; then
+    success "Tag v$VERSION is available"
+    break
+  fi
+  if [[ $i -eq 10 ]]; then
+    error "Tag v$VERSION not found on GitHub after 20s. Try running with --skip-tag"
+  fi
+  warn "Tag not yet available, retrying in 2s... ($i/10)"
+  sleep 2
+done
+
 RELEASE_NOTES="## What's Changed
 
 ### Features
