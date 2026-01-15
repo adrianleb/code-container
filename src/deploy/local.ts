@@ -50,7 +50,7 @@ export function generateFiles(options: InitOptions): void {
   writeFileSync(join(outputDir, "docker-compose.yml"), compose);
   ui.item("docker-compose.yml", "ok");
 
-  const entrypoint = generateEntrypoint({ agents });
+  const entrypoint = generateEntrypoint({ agents, extensions });
   const entrypointPath = join(outputDir, "entrypoint.sh");
   writeFileSync(entrypointPath, entrypoint);
   chmodSync(entrypointPath, 0o755);
@@ -67,6 +67,20 @@ export function generateFiles(options: InitOptions): void {
     mkdirSync(projectsPath, { recursive: true });
   }
   ui.item("projects/", "ok");
+
+  // Create skills directory for mounting into container
+  const skillsPath = join(outputDir, "skills");
+  if (!existsSync(skillsPath)) {
+    mkdirSync(skillsPath, { recursive: true });
+  }
+  ui.item("skills/", "ok");
+
+  // Create mcp-configs directory for mounting into container
+  const mcpConfigsPath = join(outputDir, "mcp-configs");
+  if (!existsSync(mcpConfigsPath)) {
+    mkdirSync(mcpConfigsPath, { recursive: true });
+  }
+  ui.item("mcp-configs/", "ok");
 }
 
 export async function generateContainerSSHKeys(outputDir: string): Promise<string> {

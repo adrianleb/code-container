@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
+// @ts-ignore - Bun supports this import syntax
+import pkg from "../package.json" with { type: "json" };
 import {
   loadAgents,
   listAvailableAgents,
@@ -20,7 +22,11 @@ import {
   disableExtension,
   isExtensionEnabled,
   getExtensionsDir,
+  getExtensionConfig,
 } from "./extensions/loader.ts";
+import { injectMcpConfigToAllAgents, removeMcpConfigFromAllAgents } from "./extensions/mcp-injector.ts";
+import { installSkill, removeSkill } from "./extensions/skills-manager.ts";
+import { startHostExtension, stopHostExtension, isHostExtensionRunning, installHostExtension } from "./extensions/host-manager.ts";
 import {
   getUserFirewallDomains,
   addUserFirewallDomain,
@@ -84,6 +90,13 @@ function getAgents(): Record<string, Agent> {
 
 const DEFAULT_CONTAINER_NAME = "ccc";
 const DEFAULT_OUTPUT_DIR = join(homedir(), ".ccc");
+const CLI_VERSION = (pkg as { version?: string }).version ?? "0.0.0";
+
+function warnDeprecatedOutputDir(outputDir: string): void {
+  if (outputDir !== DEFAULT_OUTPUT_DIR) {
+    ui.warning(`--output is deprecated and will be removed. Use ${ui.style.path(DEFAULT_OUTPUT_DIR)} instead.`);
+  }
+}
 
 export function createCLI(): Command {
   const program = new Command();
@@ -91,7 +104,7 @@ export function createCLI(): Command {
   program
     .name("ccc")
     .description("Coding Container CLI - Setup coding agents in Docker with firewall support")
-    .version("0.1.0")
+    .version(CLI_VERSION)
     .configureOutput({
       writeOut: (str) => process.stdout.write(str),
       writeErr: (str) => process.stderr.write(str),
@@ -150,7 +163,7 @@ export function createCLI(): Command {
     .command("init [target]")
     .description("Initialize a new coding container")
     .option("--agents <names>", "Agent(s) to use (comma-separated, e.g., claude,codex)")
-    .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .option("--no-build", "Skip building the container")
     .option("--no-cache", "Build without Docker cache")
     .action(async (target, options) => {
@@ -279,6 +292,7 @@ export function createCLI(): Command {
         return;
       }
 
+      warnDeprecatedOutputDir(options.output);
       ui.welcome();
       console.log(`${ui.symbols.rocket} ${ui.style.bold("Initializing local coding container...")}\n`);
       console.log(`  ${ui.style.dim("Agents:")} ${selectedAgents.map((a) => a.name).join(", ")}\n`);
@@ -366,7 +380,7 @@ export function createCLI(): Command {
   program
     .command("build [target]")
     .description("Build/rebuild the container")
-    .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .option("--no-cache", "Build without Docker cache")
     .action(async (target, options) => {
       const host = resolveTarget(target);
@@ -387,6 +401,7 @@ export function createCLI(): Command {
 
       console.log(`\n${ui.symbols.package} ${ui.style.bold("Building container...")}\n`);
 
+      warnDeprecatedOutputDir(options.output);
       if (!existsSync(join(options.output, "Dockerfile"))) {
         ui.error("No Dockerfile found.");
         console.log(`\n  Run ${ui.style.command("ccc init")} first to generate the container files.`);
@@ -399,7 +414,7 @@ export function createCLI(): Command {
   program
     .command("start [target]")
     .description("Start the container")
-    .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .action(async (target, options) => {
       const host = resolveTarget(target);
 
@@ -415,6 +430,7 @@ export function createCLI(): Command {
       }
 
       console.log(`\n${ui.symbols.rocket} ${ui.style.bold("Starting container...")}\n`);
+      warnDeprecatedOutputDir(options.output);
       await startContainer(options.output);
       ui.success("Container started!");
       ui.hint(`Connect with: ${ui.style.command("ccc")}`);
@@ -946,9 +962,12 @@ export function createCLI(): Command {
     .argument("[target]", "Remote target (@alias) or local")
     .option("--no-build", "Only enable config, skip rebuild (for adding multiple agents)")
     .option("--no-cache", "Build without Docker cache")
-    .option("-o, --output <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+    .option("-o, --output <dir>", "Output directory (deprecated)", DEFAULT_OUTPUT_DIR)
     .action(async (name, target, options) => {
       const host = resolveTarget(target);
+      if (!host) {
+        warnDeprecatedOutputDir(options.output);
+      }
       const templates = listAvailableAgents();
       const template = templates.find((t) => t.name === name);
 
@@ -1297,19 +1316,40 @@ export function createCLI(): Command {
 
       console.log(`\n${ui.symbols.gear} ${ui.style.bold("Extensions")}\n`);
 
-      for (const template of templates) {
-        const isEnabled = isExtensionEnabled(template.name);
-        const statusIcon = isEnabled ? ui.style.ok() : ui.style.dim("○");
-        const statusText = isEnabled ? ui.style.success("enabled") : ui.style.dim("available");
+      // Group by type
+      const byType: Record<string, typeof templates> = { host: [], mcp: [], skill: [] };
+      for (const t of templates) {
+        const type = t.type || "host";
+        if (!byType[type]) byType[type] = [];
+        byType[type]!.push(t);
+      }
 
-        console.log(`  ${statusIcon} ${ui.style.bold(template.name)} ${statusText}`);
-        console.log(`    ${ui.style.dim(template.description)}`);
+      const typeLabels: Record<string, string> = {
+        host: "Host Services",
+        mcp: "MCP Servers",
+        skill: "Agent Skills",
+      };
 
-        if (isEnabled) {
+      for (const [type, list] of Object.entries(byType)) {
+        if (list.length === 0) continue;
+
+        console.log(`  ${ui.style.bold(typeLabels[type] || type)}`);
+
+        for (const template of list) {
+          const isEnabled = isExtensionEnabled(template.name);
           const ext = enabled[template.name];
-          if (ext && ext.firewallDomains.length > 0) {
-            console.log(`    ${ui.style.dim("Domains:")} ${ext.firewallDomains.join(", ")}`);
+          const statusIcon = isEnabled ? ui.style.ok() : ui.style.dim("○");
+          const statusText = isEnabled ? ui.style.success("enabled") : ui.style.dim("available");
+
+          // For host extensions, show running status
+          let runningStatus = "";
+          if (type === "host" && isEnabled && ext?.runCmd) {
+            const running = isHostExtensionRunning(ext);
+            runningStatus = running ? ` ${ui.style.success("(running)")}` : ` ${ui.style.dim("(stopped)")}`;
           }
+
+          console.log(`    ${statusIcon} ${ui.style.bold(template.name)} ${statusText}${runningStatus}`);
+          console.log(`      ${ui.style.dim(template.description)}`);
         }
         console.log();
       }
@@ -1338,6 +1378,35 @@ export function createCLI(): Command {
       const enabled = enableExtensions([name]);
       if (enabled.length > 0) {
         ui.success(`Enabled extension: ${ui.style.highlight(name)}`);
+
+        // Get the full extension config
+        const ext = loadExtensions()[name];
+        if (!ext) return;
+
+        // Handle type-specific setup
+        switch (ext.type) {
+          case "mcp":
+            // Inject MCP config into all agents
+            const agents = Object.values(getAgents());
+            const injected = injectMcpConfigToAllAgents(agents, ext);
+            if (injected.length > 0) {
+              ui.item(`MCP config injected for: ${injected.join(", ")}`, "ok");
+            }
+            break;
+
+          case "skill":
+            // Install skill file to ~/.ccc/skills/ (mounted into container)
+            if (installSkill(ext)) {
+              ui.item("Skill file installed", "ok");
+            }
+            // Note: Symlinks to agent skill paths are created by entrypoint inside container
+            break;
+
+          case "host":
+            ui.hint("Start with: " + ui.style.command(`ccc extension start ${name}`));
+            break;
+        }
+
         ui.hint("Rebuild container to apply firewall changes: " + ui.style.command("ccc build"));
       }
     });
@@ -1352,9 +1421,95 @@ export function createCLI(): Command {
         process.exit(1);
       }
 
+      // Get extension before disabling
+      const ext = loadExtensions()[name];
+
+      // Handle type-specific cleanup
+      if (ext) {
+        switch (ext.type) {
+          case "mcp":
+            // Remove MCP config from all agents
+            const agents = Object.values(getAgents());
+            removeMcpConfigFromAllAgents(agents, name);
+            break;
+
+          case "skill":
+            // Remove skill file
+            removeSkill(ext);
+            break;
+
+          case "host":
+            // Stop if running
+            if (ext.runCmd) {
+              stopHostExtension(ext);
+            }
+            break;
+        }
+      }
+
       if (disableExtension(name)) {
         ui.success(`Disabled extension: ${name}`);
         ui.hint("Rebuild container to apply firewall changes: " + ui.style.command("ccc build"));
+      }
+    });
+
+  extensionCmd
+    .command("start <name>")
+    .description("Start a host extension")
+    .action((name) => {
+      const ext = loadExtensions()[name];
+      if (!ext) {
+        ui.error(`Extension '${name}' not found or not enabled`);
+        process.exit(1);
+      }
+
+      if (ext.type !== "host") {
+        ui.error(`Extension '${name}' is not a host extension (type: ${ext.type})`);
+        process.exit(1);
+      }
+
+      if (!ext.runCmd) {
+        ui.error(`Extension '${name}' has no run command`);
+        process.exit(1);
+      }
+
+      console.log(`\n${ui.symbols.rocket} ${ui.style.bold("Starting")} ${ui.style.highlight(name)}...\n`);
+
+      // Install if needed
+      if (ext.installCmd) {
+        ui.item("Checking installation...", "pending");
+        installHostExtension(ext);
+      }
+
+      // Start
+      if (startHostExtension(ext)) {
+        ui.success(`${name} started!`);
+      } else {
+        ui.error(`Failed to start ${name}`);
+      }
+    });
+
+  extensionCmd
+    .command("stop <name>")
+    .description("Stop a host extension")
+    .action((name) => {
+      const ext = loadExtensions()[name];
+      if (!ext) {
+        ui.error(`Extension '${name}' not found or not enabled`);
+        process.exit(1);
+      }
+
+      if (ext.type !== "host") {
+        ui.error(`Extension '${name}' is not a host extension (type: ${ext.type})`);
+        process.exit(1);
+      }
+
+      console.log(`\n${ui.symbols.gear} ${ui.style.bold("Stopping")} ${ui.style.highlight(name)}...\n`);
+
+      if (stopHostExtension(ext)) {
+        ui.success(`${name} stopped`);
+      } else {
+        ui.warning(`${name} was not running or stop failed`);
       }
     });
 

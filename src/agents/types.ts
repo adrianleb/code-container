@@ -1,3 +1,16 @@
+export type McpFormat = "claude" | "opencode" | "codex" | "gemini";
+export type SkillsFormat = "markdown" | "json";
+
+export interface AgentMcpConfig {
+  configPath: string; // e.g., ".claude.json" or ".opencode/config.json"
+  format: McpFormat;
+}
+
+export interface AgentSkillsConfig {
+  path: string; // e.g., ".claude/skills" - where to symlink
+  format: SkillsFormat;
+}
+
 export interface Agent {
   name: string;
   installCmd: string;
@@ -8,6 +21,8 @@ export interface Agent {
   skipPermissionsFlag?: string;
   configPath?: string;
   authCheckFiles?: string[];
+  mcp?: AgentMcpConfig;
+  skills?: AgentSkillsConfig;
   getAuthInstructions(): string;
   getDockerfileSnippet(): string;
 }
@@ -48,5 +63,15 @@ export interface AgentConfig {
 
   dockerfile?: {
     snippet?: string;
+  };
+
+  mcp?: {
+    config_path: string; // Where agent stores MCP config
+    format: McpFormat;
+  };
+
+  skills?: {
+    path: string; // Where to symlink global skills
+    format: SkillsFormat;
   };
 }

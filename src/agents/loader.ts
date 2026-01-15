@@ -18,6 +18,8 @@ function configToAgent(config: AgentConfig): Agent {
     skipPermissionsFlag: config.skip_permissions_flag,
     configPath: config.config_path,
     authCheckFiles: config.auth?.auth_check_files,
+    mcp: config.mcp ? { configPath: config.mcp.config_path, format: config.mcp.format } : undefined,
+    skills: config.skills ? { path: config.skills.path, format: config.skills.format } : undefined,
 
     getAuthInstructions(): string {
       return config.auth?.instructions || `Run '${config.run_cmd}' to authenticate.`;

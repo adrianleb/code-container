@@ -1,7 +1,7 @@
 import { execSync, spawn, spawnSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, mkdtempSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, mkdtempSync, readdirSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import type { Agent } from "../agents/types.ts";
 import { loadAgents } from "../agents/loader.ts";
 import { checkAgentInstalled } from "../agents/auth.ts";
@@ -9,6 +9,8 @@ import { generateDockerfile } from "../templates/dockerfile.ts";
 import { generateCompose } from "../templates/compose.ts";
 import { generateEntrypoint } from "../templates/entrypoint.ts";
 import { generateFirewall } from "../templates/firewall.ts";
+import { loadExtensions } from "../extensions/loader.ts";
+import { getUserFirewallDomains } from "../firewall/config.ts";
 import { detectRemotePlatform, ensureBinaryForPlatform } from "./binary.ts";
 import * as ui from "../utils/ui.ts";
 
@@ -106,6 +108,9 @@ export async function initRemote(
 
   const tempDir = mkdtempSync(join(tmpdir(), "ccc-"));
 
+  const extensions = Object.values(loadExtensions());
+  const userFirewallDomains = getUserFirewallDomains();
+
   const dockerfile = generateDockerfile({ agents });
   writeFileSync(join(tempDir, "Dockerfile"), dockerfile);
   ui.item("Dockerfile", "ok");
@@ -114,11 +119,11 @@ export async function initRemote(
   writeFileSync(join(tempDir, "docker-compose.yml"), compose);
   ui.item("docker-compose.yml", "ok");
 
-  const entrypoint = generateEntrypoint({ agents });
+  const entrypoint = generateEntrypoint({ agents, extensions });
   writeFileSync(join(tempDir, "entrypoint.sh"), entrypoint);
   ui.item("entrypoint.sh", "ok");
 
-  const firewall = generateFirewall({ agents });
+  const firewall = generateFirewall({ agents, extensions, userDomains: userFirewallDomains });
   writeFileSync(join(tempDir, "init-firewall.sh"), firewall);
   ui.item("init-firewall.sh", "ok");
 
@@ -147,7 +152,7 @@ export async function initRemote(
   ui.header(ui.step(4, 5, "Copying files to remote"));
 
   sshExec(host, `mkdir -p ${REMOTE_CCC_DIR} ${REMOTE_BIN_DIR}`, { ignoreError: true });
-  sshExec(host, `mkdir -p ${REMOTE_CCC_DIR}/ssh-keys ${REMOTE_CCC_DIR}/projects`);
+  sshExec(host, `mkdir -p ${REMOTE_CCC_DIR}/ssh-keys ${REMOTE_CCC_DIR}/projects ${REMOTE_CCC_DIR}/skills ${REMOTE_CCC_DIR}/mcp-configs`);
   ui.item("Created remote directories", "ok");
 
   scpFile(join(tempDir, "Dockerfile"), host, `${REMOTE_CCC_DIR}/Dockerfile`);
@@ -158,6 +163,18 @@ export async function initRemote(
 
   scpDir(sshKeysDir, host, `${REMOTE_CCC_DIR}/`);
   ui.item("Copied SSH keys", "ok");
+
+  const localSkillsDir = join(homedir(), ".ccc", "skills");
+  if (existsSync(localSkillsDir) && readdirSync(localSkillsDir).length > 0) {
+    childProcess.execSync(`scp -q -r "${localSkillsDir}/." "${host}:${REMOTE_CCC_DIR}/skills"`, { stdio: "pipe" });
+    ui.item("Copied skills", "ok");
+  }
+
+  const localMcpDir = join(homedir(), ".ccc", "mcp-configs");
+  if (existsSync(localMcpDir) && readdirSync(localMcpDir).length > 0) {
+    childProcess.execSync(`scp -q -r "${localMcpDir}/." "${host}:${REMOTE_CCC_DIR}/mcp-configs"`, { stdio: "pipe" });
+    ui.item("Copied MCP configs", "ok");
+  }
 
   scpFile(binaryPath, host, `${REMOTE_BIN_DIR}/ccc`);
   sshExec(host, `chmod +x ${REMOTE_BIN_DIR}/ccc`);

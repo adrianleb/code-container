@@ -43,6 +43,14 @@ method = "oauth"
 instructions = "Run 'claude' and follow the OAuth flow to authenticate with your Claude Pro/Max account or Anthropic Console."
 auth_check_files = [".credentials.json", "settings.json"]
 
+[mcp]
+config_path = ".claude.json"
+format = "claude"
+
+[skills]
+path = ".claude/skills"
+format = "markdown"
+
 [dockerfile]
 snippet = """
 # Install Claude Code via native installer

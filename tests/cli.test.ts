@@ -88,6 +88,7 @@ mock.module("../src/extensions/loader.ts", () => ({
   disableExtension: () => false,
   isExtensionEnabled: () => false,
   getExtensionsDir: () => "/tmp/ccc/extensions",
+  getExtensionConfig: () => undefined,
 }));
 
 mock.module("../src/firewall/config.ts", () => ({
@@ -146,6 +147,29 @@ mock.module("../src/deploy/remote.ts", () => ({
     sessions: [],
     agents: [],
   }),
+  updateRemoteBinary: async () => {},
+}));
+
+mock.module("../src/extensions/mcp-injector.ts", () => ({
+  injectMcpConfigToAllAgents: () => [],
+  removeMcpConfigFromAllAgents: () => [],
+  injectMcpConfig: () => true,
+  removeMcpConfig: () => true,
+}));
+
+mock.module("../src/extensions/skills-manager.ts", () => ({
+  installSkill: () => true,
+  removeSkill: () => true,
+  linkSkillsToAllAgents: () => [],
+  linkSkillsToAgent: () => true,
+  getSkillsDir: () => "/tmp/ccc/skills",
+}));
+
+mock.module("../src/extensions/host-manager.ts", () => ({
+  startHostExtension: () => true,
+  stopHostExtension: () => true,
+  isHostExtensionRunning: () => false,
+  installHostExtension: () => true,
 }));
 
 const childProcessMock = () => ({

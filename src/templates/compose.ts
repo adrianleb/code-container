@@ -47,6 +47,12 @@ export function generateCompose(options: ComposeOptions = {}): string {
       # SSH keys for GitHub (overrides home volume for .ssh)
       - ./ssh-keys:/home/ccc/.ssh:ro
 
+      # Skills directory (shared across agents)
+      - ./skills:/home/ccc/.ccc/skills:ro
+
+      # MCP configs (per-agent configs injected by ccc)
+      - ./mcp-configs:/home/ccc/.ccc/mcp-configs:ro
+
     # Keep container running
     tty: true
     stdin_open: true

@@ -30,7 +30,7 @@ Run AI coding agents locally or remotely in Docker containers with persistent se
 - **Persistent Sessions** — Powered by [shpool](https://github.com/shell-pool/shpool), sessions survive disconnects
 - **Multi-Agent** — Claude, Codex, Gemini, OpenCode, or bring your own
 - **Remote Hosting** — Deploy to any VPS, manage multiple hosts
-- **Mobile Access** — Connect via SSH + Tailscale using `ccc-server`
+- **Mobile Access** — Connect via SSH + Tailscale using the `ccc` binary
 - **Telegram Bot** — Chat with agents via [takopi](https://github.com/banteg/takopi)
 
 ## Installation
@@ -159,16 +159,16 @@ ccc @vps
 
 Connect to your coding agents from any device with SSH — phone, tablet, or laptop.
 
-### ccc-server
+### Remote ccc
 
-When you run `ccc init` on a remote host, CCC installs `ccc-server` — a lightweight wrapper that handles session attachment and firewall control. Connect from any SSH client without needing CCC installed.
+When you run `ccc init` on a remote host, CCC installs the `ccc` binary to `~/bin/ccc`. Connect from any SSH client without needing CCC installed locally.
 
 ```bash
 # On your VPS (via SSH)
-ccc-server              # Attach to main session
-ccc-server work         # Attach to named session
-ccc-server --no-firewall        # Disable firewall
-ccc-server --yolo "fix bugs"    # Auto-approve mode
+ccc                     # Attach to main session
+ccc work                # Attach to named session
+ccc --no-firewall       # Disable firewall
+ccc --yolo "fix bugs"   # Auto-approve mode
 ```
 
 **Detach:** `Ctrl+Space` then `Ctrl+Q`
@@ -181,7 +181,7 @@ Add to `~/.ssh/config` for one-command access:
 Host ccc
     HostName your-vps-ip
     User ubuntu
-    RemoteCommand ~/bin/ccc-server
+    RemoteCommand ~/bin/ccc
     RequestTTY yes
 ```
 
@@ -194,19 +194,19 @@ Then just: `ssh ccc`
 Host ccc
     HostName your-vps-ip
     User ubuntu
-    RemoteCommand ~/bin/ccc-server
+    RemoteCommand ~/bin/ccc
     RequestTTY yes
 
 Host ccc-work
     HostName your-vps-ip
     User ubuntu
-    RemoteCommand ~/bin/ccc-server work
+    RemoteCommand ~/bin/ccc work
     RequestTTY yes
 
 Host ccc-yolo
     HostName your-vps-ip
     User ubuntu
-    RemoteCommand ~/bin/ccc-server --yolo
+    RemoteCommand ~/bin/ccc --yolo
     RequestTTY yes
 ```
 
@@ -214,7 +214,7 @@ Host ccc-yolo
 
 ### Mobile Apps
 
-Any SSH app works. Set the "startup command" or "remote command" to `~/bin/ccc-server`.
+Any SSH app works. Set the "startup command" or "remote command" to `~/bin/ccc`.
 
 | App | Platform | Notes |
 |-----|----------|-------|
@@ -253,7 +253,7 @@ sudo apt install mosh
 sudo ufw allow 60000:61000/udp
 
 # Connect
-mosh user@your-vps -- ~/bin/ccc-server
+mosh user@your-vps -- ~/bin/ccc
 ```
 
 </details>

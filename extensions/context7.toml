@@ -1,8 +1,15 @@
 name = "context7"
+type = "mcp"
 description = "Context7 MCP server for documentation lookup"
 
 [firewall]
 domains = [
   "api.context7.com",
   "context7.com",
+  "registry.npmjs.org",
+  "registry.npmjs.com",
 ]
+
+[mcp]
+command = "npx"
+args = ["-y", "@anthropic/context7-mcp"]

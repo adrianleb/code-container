@@ -44,6 +44,16 @@ auth_cmd = "codex login --device-auth"
 instructions = "Follow the device auth flow - a code will be displayed to enter at the OpenAI website. Requires ChatGPT Plus, Pro, Business, Edu, or Enterprise plan."
 auth_check_files = ["auth.json", "config.json"]
 
+[mcp]
+config_path = ".codex/config.toml"
+format = "codex"
+# Note: Codex uses TOML format - MCP auto-injection not supported
+# Configure manually via: codex mcp add <server>
+
+[skills]
+path = ".codex/skills"
+format = "markdown"
+
 [dockerfile]
 snippet = """
 # Install OpenAI Codex CLI

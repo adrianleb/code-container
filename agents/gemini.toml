@@ -48,6 +48,14 @@ method = "oauth"
 instructions = "Run 'gemini' and follow the Google OAuth flow (free tier: 60 req/min, 1000 req/day), or set GEMINI_API_KEY from https://aistudio.google.com/apikey"
 auth_check_files = ["settings.json", "credentials.json"]
 
+[mcp]
+config_path = ".gemini/settings.json"
+format = "gemini"
+
+# Note: Gemini uses TOML-based commands, not markdown skills
+# Custom commands go in ~/.gemini/commands/*.toml
+# Skills symlink is not applicable for Gemini's format
+
 [dockerfile]
 snippet = """
 # Install Google Gemini CLI (requires Node.js 20+)

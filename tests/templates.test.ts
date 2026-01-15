@@ -54,14 +54,22 @@ test("generateDockerfile includes entrypoint", () => {
 
 const extensionA: Extension = {
   name: "takopi",
+  type: "host",
   description: "Telegram bot",
   firewallDomains: ["api.telegram.org"],
+  installCmd: "uv tool install takopi",
+  runCmd: "takopi",
 };
 
 const extensionB: Extension = {
   name: "context7",
+  type: "mcp",
   description: "MCP server",
   firewallDomains: ["api.context7.com", "context7.com"],
+  mcp: {
+    command: "npx",
+    args: ["-y", "@anthropic/context7-mcp"],
+  },
 };
 
 test("generateFirewall includes extension domains", () => {
@@ -77,7 +85,7 @@ test("generateFirewall includes user domains", () => {
 test("generateFirewall de-duplicates across agents, extensions, and user domains", () => {
   const firewall = generateFirewall({
     agents: [agentA],
-    extensions: [{ ...extensionA, firewallDomains: ["api.example.com"] }],
+    extensions: [{ name: "test", type: "host", description: "test", firewallDomains: ["api.example.com"] }],
     userDomains: ["api.example.com"],
   });
   const count = (firewall.match(/api\.example\.com/g) || []).length;
@@ -94,4 +102,68 @@ test("generateFirewall merges all three sources", () => {
   expect(firewall).toContain("api.telegram.org"); // from takopi extension
   expect(firewall).toContain("api.context7.com"); // from context7 extension
   expect(firewall).toContain("myapi.example.com"); // from user
+});
+
+// Agent with skills support
+const agentWithSkills: Agent = {
+  ...agentA,
+  skills: {
+    path: ".alpha/skills",
+    format: "markdown",
+  },
+};
+
+test("generateEntrypoint includes host extension setup", () => {
+  const entrypoint = generateEntrypoint({ agents: [agentA], extensions: [extensionA] });
+  expect(entrypoint).toContain("takopi"); // Host extension run command
+  expect(entrypoint).toContain("DISABLE_EXTENSIONS"); // Extension disable check
+});
+
+test("generateEntrypoint includes skills symlink setup", () => {
+  const entrypoint = generateEntrypoint({ agents: [agentWithSkills], extensions: [] });
+  expect(entrypoint).toContain(".alpha/skills"); // Skills path from agent
+  expect(entrypoint).toContain(".ccc/skills"); // Global skills dir
+});
+
+// Agent with MCP support
+const agentWithMcp: Agent = {
+  ...agentA,
+  mcp: {
+    configPath: ".alpha/config.json",
+    format: "claude",
+  },
+};
+
+const agentWithCodexMcp: Agent = {
+  ...agentA,
+  mcp: {
+    configPath: ".codex/config.toml",
+    format: "codex",
+  },
+};
+
+test("generateEntrypoint includes MCP config setup", () => {
+  const entrypoint = generateEntrypoint({ agents: [agentWithMcp], extensions: [] });
+  expect(entrypoint).toContain(".ccc/mcp-configs/alpha.json"); // MCP source config
+  expect(entrypoint).toContain(".alpha/config.json"); // Agent MCP config path
+  expect(entrypoint).toContain("MCP_SOURCE"); // MCP setup variables
+  expect(entrypoint).toContain("MCP_DEST");
+});
+
+test("generateEntrypoint skips codex MCP setup", () => {
+  const entrypoint = generateEntrypoint({ agents: [agentWithCodexMcp], extensions: [] });
+  expect(entrypoint).not.toContain(".ccc/mcp-configs/alpha.json");
+  expect(entrypoint).not.toContain(".codex/config.toml");
+  expect(entrypoint).not.toContain("MCP_SOURCE");
+  expect(entrypoint).not.toContain("MCP_DEST");
+});
+
+test("generateCompose includes skills volume mount", () => {
+  const compose = generateCompose({ agents: [agentA] });
+  expect(compose).toContain("./skills:/home/ccc/.ccc/skills");
+});
+
+test("generateCompose includes mcp-configs volume mount", () => {
+  const compose = generateCompose({ agents: [agentA] });
+  expect(compose).toContain("./mcp-configs:/home/ccc/.ccc/mcp-configs");
 });

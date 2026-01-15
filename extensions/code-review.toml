@@ -1,0 +1,34 @@
+name = "code-review"
+type = "skill"
+description = "Structured code review workflow"
+
+[skill]
+filename = "code-review.md"
+content = """
+# Code Review Skill
+
+When asked to review code, follow this structured approach:
+
+## Security Check
+- SQL injection vulnerabilities
+- XSS vulnerabilities
+- Authentication/authorization issues
+- Secrets/credentials in code
+
+## Code Quality
+- Error handling completeness
+- Edge cases coverage
+- Resource cleanup (files, connections)
+
+## Performance
+- N+1 queries
+- Unnecessary loops/allocations
+- Missing caching opportunities
+
+## Maintainability
+- Clear naming conventions
+- Appropriate abstractions
+- Test coverage gaps
+
+Provide specific line references and concrete suggestions.
+"""

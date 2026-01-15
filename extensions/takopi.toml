@@ -1,5 +1,8 @@
 name = "takopi"
+type = "host"
 description = "Telegram bot for chatting with agents"
+install_cmd = "uv tool install takopi"
+run_cmd = "takopi"
 
 [firewall]
 domains = [
